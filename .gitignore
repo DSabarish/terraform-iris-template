@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+venv/
+.venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+!terraform/envs/*/terraform.tfvars  # Exclude tfvars in envs/ if intended to be committed (usually not, but in this sample project structure they are)
+# Ideally, we don't commit tfvars with secrets. But since they contain project_id/env/region (non-secret), we can commit them.
+# The user needs to verify no secrets are put in there.
+# For backend.conf, similar logic applies.
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
