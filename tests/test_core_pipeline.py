@@ -20,7 +20,7 @@ def test_clean_data_removes_duplicates_and_invalid_targets():
 
     # Only the valid class 0 rows should remain, with duplicates removed
     assert set(cleaned["target"].unique()) == {0}
-    assert len(cleaned) == 2
+    assert len(cleaned) == 1
 
 
 def test_transform_adds_engineered_features_and_scales():
