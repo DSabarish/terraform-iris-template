@@ -1,24 +1,22 @@
 """
 inference.py
 ------------
-Loads the model and scaler from GCS and provides a predict() function
-used by the FastAPI app.
+Loads the model and scaler from GCS or Vertex AI Model Registry.
 
-Environment Variables (set at runtime via Cloud Run):
-  - GCS_BUCKET: GCS bucket name
-  - MODEL_PREFIX: path prefix in bucket (e.g. artifacts/models/latest)
-  - SCALER_PREFIX: path prefix in bucket (e.g. artifacts/scalers)
-  - GCP_PROJECT_ID: GCP project
-
-This module is imported by app.py.
+Environment Variables (set at runtime, e.g. Cloud Run):
+  Option A — Vertex AI (registered model):
+    - VERTEX_MODEL_RESOURCE_NAME: full resource (e.g. projects/123/locations/us-central1/models/456)
+    - or VERTEX_MODEL_DISPLAY_NAME: use latest model with this name (e.g. iris-classifier)
+    - VERTEX_REGION: region for Vertex AI (default us-central1)
+  Option B — GCS directly:
+    - GCS_BUCKET, MODEL_PREFIX (e.g. artifacts/models/latest), SCALER_PREFIX (e.g. artifacts/scalers)
 """
 
-import io
 import logging
 import os
 import pickle
 from functools import lru_cache
-from typing import List
+from typing import List, Tuple
 
 from google.cloud import storage
 import numpy as np
@@ -27,6 +25,46 @@ logger = logging.getLogger(__name__)
 
 TARGET_NAMES = {0: "setosa", 1: "versicolor", 2: "virginica"}
 FEATURE_COLS = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+
+
+def _parse_gs_uri(uri: str) -> Tuple[str, str]:
+    """Parse gs://bucket/path/ into (bucket, path_without_trailing_slash)."""
+    uri = uri.rstrip("/")
+    if not uri.startswith("gs://"):
+        raise ValueError(f"Not a GCS URI: {uri}")
+    rest = uri[5:]
+    idx = rest.find("/")
+    if idx == -1:
+        return rest, ""
+    return rest[:idx], rest[idx + 1 :]
+
+
+@lru_cache(maxsize=1)
+def _get_vertex_artifact_uri() -> str | None:
+    """Resolve Vertex AI model to GCS artifact_uri. Returns None if not using Vertex."""
+    resource = os.environ.get("VERTEX_MODEL_RESOURCE_NAME")
+    display_name = os.environ.get("VERTEX_MODEL_DISPLAY_NAME")
+    region = os.environ.get("VERTEX_REGION", "us-central1")
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID")
+
+    if resource:
+        from google.cloud import aiplatform
+        model = aiplatform.Model(resource)
+        model.reload()
+        uri = model.artifact_uri
+        logger.info("Vertex model %s -> artifact_uri %s", resource, uri)
+        return uri
+    if display_name and project:
+        from google.cloud import aiplatform
+        aiplatform.init(project=project, location=region)
+        models = aiplatform.Model.list(filter=f'display_name="{display_name}"', order_by="create_time desc")
+        if not models:
+            raise ValueError(f"No Vertex AI model found with display_name={display_name!r}")
+        model = models[0]
+        uri = model.artifact_uri
+        logger.info("Vertex latest model %s -> artifact_uri %s", display_name, uri)
+        return uri
+    return None
 
 
 def _download_pkl(bucket_name: str, blob_path: str) -> object:
@@ -38,6 +76,12 @@ def _download_pkl(bucket_name: str, blob_path: str) -> object:
 
 @lru_cache(maxsize=1)
 def load_model():
+    vertex_uri = _get_vertex_artifact_uri()
+    if vertex_uri:
+        bucket, prefix = _parse_gs_uri(vertex_uri)
+        model_path = f"{prefix}/model.pkl" if prefix else "model.pkl"
+        logger.info("Loading model from gs://%s/%s", bucket, model_path)
+        return _download_pkl(bucket, model_path)
     bucket = os.environ["GCS_BUCKET"]
     model_prefix = os.environ.get("MODEL_PREFIX", "artifacts/models/latest")
     model_path = f"{model_prefix}/model.pkl"
@@ -47,6 +91,12 @@ def load_model():
 
 @lru_cache(maxsize=1)
 def load_scaler():
+    vertex_uri = _get_vertex_artifact_uri()
+    if vertex_uri:
+        bucket, prefix = _parse_gs_uri(vertex_uri)
+        scaler_path = f"{prefix}/scaler.pkl" if prefix else "scaler.pkl"
+        logger.info("Loading scaler from gs://%s/%s", bucket, scaler_path)
+        return _download_pkl(bucket, scaler_path)
     bucket = os.environ["GCS_BUCKET"]
     scaler_prefix = os.environ.get("SCALER_PREFIX", "artifacts/scalers")
     scaler_path = f"{scaler_prefix}/scaler.pkl"

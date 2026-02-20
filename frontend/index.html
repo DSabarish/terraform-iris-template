@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iris ML API — Frontend</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      background: #0f1419;
+      color: #e6edf3;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .sub { color: #8b949e; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    label { display: block; margin-bottom: 0.25rem; color: #8b949e; font-size: 0.85rem; }
+    input, textarea, button {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 0.75rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 0.95rem;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #58a6ff;
+    }
+    button {
+      width: auto;
+      cursor: pointer;
+      background: #238636;
+      border-color: #238636;
+      font-weight: 600;
+    }
+    button:hover { background: #2ea043; }
+    button.secondary { background: #21262d; border-color: #30363d; }
+    button.secondary:hover { background: #30363d; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .card h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: #58a6ff; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row > * { flex: 1 1 120px; }
+    .result {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: #0d1117;
+      border-radius: 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 2rem;
+    }
+    .result.ok { border-left: 3px solid #3fb950; }
+    .result.err { border-left: 3px solid #f85149; }
+    .api-url { margin-bottom: 1.5rem; }
+    .api-url input { max-width: 360px; }
+  </style>
+</head>
+<body>
+  <h1>Iris ML API</h1>
+  <p class="sub">Single-page frontend for health, model-info, predict, and batch predict.</p>
+
+  <div class="card api-url">
+    <label for="baseUrl">API base URL</label>
+    <input type="text" id="baseUrl" placeholder="Leave empty to use this page's origin">
+  </div>
+
+  <div class="card">
+    <h2>GET /health</h2>
+    <button type="button" class="secondary" onclick="callHealth()">Check Health</button>
+    <div id="healthResult" class="result"></div>
+  </div>
+
+  <div class="card">
+    <h2>GET /model-info</h2>
+    <button type="button" class="secondary" onclick="callModelInfo()">Model Info</button>
+    <div id="modelInfoResult" class="result"></div>
+  </div>
+
+  <div class="card">
+    <h2>POST /predict</h2>
+    <label>sepal_length</label>
+    <input type="number" id="sepal_length" step="0.1" value="5.1" min="0" max="20">
+    <label>sepal_width</label>
+    <input type="number" id="sepal_width" step="0.1" value="3.5" min="0" max="20">
+    <label>petal_length</label>
+    <input type="number" id="petal_length" step="0.1" value="1.4" min="0" max="20">
+    <label>petal_width</label>
+    <input type="number" id="petal_width" step="0.1" value="0.2" min="0" max="20">
+    <button type="button" onclick="callPredict()">Predict</button>
+    <div id="predictResult" class="result"></div>
+  </div>
+
+  <div class="card">
+    <h2>POST /predict/batch</h2>
+    <label>JSON array of instances (each: sepal_length, sepal_width, petal_length, petal_width)</label>
+    <textarea id="batchJson" rows="6">[
+  {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2},
+  {"sepal_length": 6.3, "sepal_width": 3.3, "petal_length": 6.0, "petal_width": 2.5}
+]</textarea>
+    <button type="button" onclick="callBatchPredict()">Batch Predict</button>
+    <div id="batchResult" class="result"></div>
+  </div>
+
+  <script>
+    function baseUrl() {
+      var v = document.getElementById('baseUrl').value.trim().replace(/\/$/, '');
+      if (v) return v;
+      return window.location.origin;
+    }
+
+    function setResult(id, text, isError) {
+      var el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'result ' + (isError ? 'err' : 'ok');
+    }
+
+    async function callHealth() {
+      var id = 'healthResult';
+      setResult(id, '…');
+      try {
+        var r = await fetch(baseUrl() + '/health');
+        var data = await r.json();
+        setResult(id, JSON.stringify(data, null, 2), !r.ok);
+      } catch (e) {
+        setResult(id, 'Error: ' + e.message, true);
+      }
+    }
+
+    async function callModelInfo() {
+      var id = 'modelInfoResult';
+      setResult(id, '…');
+      try {
+        var r = await fetch(baseUrl() + '/model-info');
+        var data = await r.json();
+        setResult(id, JSON.stringify(data, null, 2), !r.ok);
+      } catch (e) {
+        setResult(id, 'Error: ' + e.message, true);
+      }
+    }
+
+    async function callPredict() {
+      var id = 'predictResult';
+      setResult(id, '…');
+      var body = {
+        sepal_length: parseFloat(document.getElementById('sepal_length').value),
+        sepal_width: parseFloat(document.getElementById('sepal_width').value),
+        petal_length: parseFloat(document.getElementById('petal_length').value),
+        petal_width: parseFloat(document.getElementById('petal_width').value)
+      };
+      try {
+        var r = await fetch(baseUrl() + '/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await r.json();
+        setResult(id, JSON.stringify(data, null, 2), !r.ok);
+      } catch (e) {
+        setResult(id, 'Error: ' + e.message, true);
+      }
+    }
+
+    async function callBatchPredict() {
+      var id = 'batchResult';
+      setResult(id, '…');
+      var raw = document.getElementById('batchJson').value.trim();
+      var arr;
+      try {
+        arr = JSON.parse(raw);
+      } catch (e) {
+        setResult(id, 'Invalid JSON: ' + e.message, true);
+        return;
+      }
+      if (!Array.isArray(arr)) {
+        setResult(id, 'Body must be an array of instances.', true);
+        return;
+      }
+      var body = { instances: arr };
+      try {
+        var r = await fetch(baseUrl() + '/predict/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await r.json();
+        setResult(id, JSON.stringify(data, null, 2), !r.ok);
+      } catch (e) {
+        setResult(id, 'Error: ' + e.message, true);
+      }
+    }
+  </script>
+</body>
+</html>

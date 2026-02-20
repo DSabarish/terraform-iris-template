@@ -17,9 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # ──────────────────────────────────────────────────────────────
-# Application source
+# Application source and frontend
 # ──────────────────────────────────────────────────────────────
 COPY src/ .
+COPY frontend/ ./frontend/
 
 # ──────────────────────────────────────────────────────────────
 # Non-root user for security
