@@ -34,6 +34,16 @@ def export_bq_to_gcs(
     Reads the raw iris table from BigQuery and writes it to GCS as a CSV.
     Returns the GCS URI of the exported file.
     """
+    # Normalize bucket name: remove gs:// prefix and strip whitespace
+    gcs_bucket = gcs_bucket.strip()
+    if gcs_bucket.startswith("gs://"):
+        gcs_bucket = gcs_bucket[5:]
+    if "/" in gcs_bucket:
+        gcs_bucket = gcs_bucket.split("/")[0]
+    
+    if not gcs_bucket:
+        raise ValueError("GCS bucket name cannot be empty")
+    
     client = bigquery.Client(project=project_id)
     table_ref = f"{project_id}.{dataset_id}.{table_id}"
 

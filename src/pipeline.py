@@ -17,6 +17,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+def _normalize_bucket_name(bucket: str) -> str:
+    """Normalize GCS bucket name: remove gs:// prefix, strip whitespace."""
+    bucket = bucket.strip()
+    if bucket.startswith("gs://"):
+        bucket = bucket[5:]
+    if "/" in bucket:
+        bucket = bucket.split("/")[0]
+    if not bucket:
+        raise ValueError("GCS bucket name cannot be empty")
+    return bucket
+
+
 def run_pipeline(
     project_id: str,
     dataset_id: str = "iris_dataset",
@@ -25,6 +37,9 @@ def run_pipeline(
 ) -> None:
     if not gcs_bucket:
         raise ValueError("gcs_bucket must be provided")
+    
+    # Normalize bucket name
+    gcs_bucket = _normalize_bucket_name(gcs_bucket)
 
     logger.info("Starting Iris pipeline for project=%s, bucket=%s", project_id, gcs_bucket)
 
