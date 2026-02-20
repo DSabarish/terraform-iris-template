@@ -2,9 +2,9 @@ name: Iris ML — CI and Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ dev-branch-iris ]
   pull_request:
-    branches: [ main ]
+    branches: [ dev-branch-iris ]
 
 jobs:
   test:
@@ -29,7 +29,7 @@ jobs:
   pipeline:
     name: Run GCP training pipeline
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
