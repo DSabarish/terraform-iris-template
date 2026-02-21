@@ -8,11 +8,13 @@ Usage:
         --service_name iris-ml-api \
         --image_uri us-central1-docker.pkg.dev/iris-100/iris-ml/iris-ml-api:latest \
         --model_display_name iris-classifier-latest \
-        --service_account iris-ml-github@iris-100.iam.gserviceaccount.com
+        --service_account iris-ml-github@iris-100.iam.gserviceaccount.com \
+        --gcs_bucket my-bucket
 """
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 
@@ -31,6 +33,7 @@ def deploy_to_cloud_run(
     image_uri: str,
     model_display_name: str,
     service_account: str,
+    gcs_bucket: str,
 ) -> str:
     logger.info("Deploying to Cloud Run...")
     logger.info("  Service name: %s", service_name)
@@ -39,6 +42,15 @@ def deploy_to_cloud_run(
     logger.info("  Service account: %s", service_account)
     logger.info("  Region: %s", region)
     logger.info("  Project: %s", project_id)
+    logger.info("  GCS Bucket: %s", gcs_bucket)
+
+    env_vars = ",".join([
+        f"VERTEX_MODEL_DISPLAY_NAME={model_display_name}",
+        f"VERTEX_REGION={region}",
+        f"GOOGLE_CLOUD_PROJECT={project_id}",
+        f"GCS_BUCKET={gcs_bucket}",           # needed by load_scaler()
+        "SCALER_PREFIX=artifacts/scalers",     # explicit scaler path
+    ])
 
     cmd = [
         "gcloud", "run", "deploy", service_name,
@@ -47,15 +59,12 @@ def deploy_to_cloud_run(
         "--platform", "managed",
         "--allow-unauthenticated",
         "--service-account", service_account,
-        "--set-env-vars",
-        f"VERTEX_MODEL_DISPLAY_NAME={model_display_name},VERTEX_REGION={region},GOOGLE_CLOUD_PROJECT={project_id}",
+        "--set-env-vars", env_vars,
         "--project", project_id,
         "--quiet",
     ]
 
-    logger.info("Running command: %s", " ".join(cmd))
-
-    # Use stdout/stderr passthrough so errors are visible in CI logs
+    logger.info("Running: %s", " ".join(cmd))
     result = subprocess.run(cmd, text=True, check=False)
 
     if result.returncode != 0:
@@ -63,18 +72,17 @@ def deploy_to_cloud_run(
         sys.exit(result.returncode)
 
     # Get service URL
-    url_cmd = [
-        "gcloud", "run", "services", "describe", service_name,
-        "--region", region,
-        "--project", project_id,
-        "--format", "value(status.url)",
-    ]
-    url_result = subprocess.run(url_cmd, capture_output=True, text=True, check=True)
+    url_result = subprocess.run(
+        [
+            "gcloud", "run", "services", "describe", service_name,
+            "--region", region,
+            "--project", project_id,
+            "--format", "value(status.url)",
+        ],
+        capture_output=True, text=True, check=True,
+    )
     service_url = url_result.stdout.strip()
-
-    logger.info("Deployment complete!")
-    logger.info("  Service URL: %s", service_url)
-
+    logger.info("Deployment complete! Service URL: %s", service_url)
     return service_url
 
 
@@ -86,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image_uri", required=True)
     parser.add_argument("--model_display_name", required=True)
     parser.add_argument("--service_account", required=True)
+    parser.add_argument("--gcs_bucket", required=True, help="GCS bucket for scaler and model artifacts")
     return parser.parse_args()
 
 
@@ -98,5 +107,6 @@ if __name__ == "__main__":
         image_uri=args.image_uri,
         model_display_name=args.model_display_name,
         service_account=args.service_account,
+        gcs_bucket=args.gcs_bucket,
     )
     print(service_url)
