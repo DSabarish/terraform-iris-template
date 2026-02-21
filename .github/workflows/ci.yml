@@ -94,7 +94,6 @@ jobs:
 
       - name: Configure Docker for Artifact Registry
         run: |
-          # Resolve REGION here so the || fallback works correctly
           REGION="${{ secrets.VERTEX_REGION }}"
           REGION="${REGION:-us-central1}"
           echo "REGION=$REGION" >> $GITHUB_ENV
@@ -111,6 +110,7 @@ jobs:
           docker push $IMAGE_URI
           docker push $LATEST_URI
 
+          echo "Built and pushed: $IMAGE_URI"
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
   register_and_deploy:
@@ -118,11 +118,13 @@ jobs:
     needs: [pipeline, build_image]
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
+    # NOTE: Do NOT put needs.build_image.outputs.image_uri in the job-level env block.
+    # Values from needs.*.outputs do not interpolate correctly into shell run steps
+    # when set at the job level. Use ${{ }} directly inside run steps instead.
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       SERVICE_NAME: iris-ml-api
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
-      IMAGE_URI: ${{ needs.build_image.outputs.image_uri }}
 
     steps:
       - uses: actions/checkout@v4
@@ -135,11 +137,22 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Resolve REGION
+      - name: Resolve REGION and IMAGE_URI
         run: |
           REGION="${{ secrets.VERTEX_REGION }}"
           REGION="${REGION:-us-central1}"
           echo "REGION=$REGION" >> $GITHUB_ENV
+
+          # Inject IMAGE_URI via ${{ }} expression — the only reliable way to
+          # pass needs.*.outputs values into shell variables across jobs
+          IMAGE_URI="${{ needs.build_image.outputs.image_uri }}"
+          if [ -z "$IMAGE_URI" ]; then
+            echo "ERROR: IMAGE_URI is empty. build_image job output was not captured."
+            exit 1
+          fi
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          echo "Resolved REGION:    $REGION"
+          echo "Resolved IMAGE_URI: $IMAGE_URI"
 
       - name: Set PYTHONPATH to repo root
         run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
@@ -164,7 +177,8 @@ jobs:
           SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
           MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
 
-          echo "Using image URI: $IMAGE_URI"
+          echo "Using REGION:    $REGION"
+          echo "Using IMAGE_URI: $IMAGE_URI"
 
           MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
             --project_id "$GCP_PROJECT" \
