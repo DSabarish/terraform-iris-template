@@ -74,12 +74,10 @@ jobs:
     needs: pipeline
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
-    # ── export image_uri so register_and_deploy can consume it ──────────────
     outputs:
       image_uri: ${{ steps.build.outputs.image_uri }}
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-      REGION: ${{ secrets.VERTEX_REGION || 'us-central1' }}
       REPO_NAME: iris-ml
       IMAGE_NAME: iris-ml-api
 
@@ -95,7 +93,12 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+        run: |
+          # Resolve REGION here so the || fallback works correctly
+          REGION="${{ secrets.VERTEX_REGION }}"
+          REGION="${REGION:-us-central1}"
+          echo "REGION=$REGION" >> $GITHUB_ENV
+          gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
       - name: Build and push Docker image
         id: build
@@ -108,7 +111,6 @@ jobs:
           docker push $IMAGE_URI
           docker push $LATEST_URI
 
-          # GITHUB_OUTPUT persists values across jobs; GITHUB_ENV does not
           echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
   register_and_deploy:
@@ -118,10 +120,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-      REGION: ${{ secrets.VERTEX_REGION || 'us-central1' }}
       SERVICE_NAME: iris-ml-api
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
-      # ── consume the image URI exported by build_image ────────────────────
       IMAGE_URI: ${{ needs.build_image.outputs.image_uri }}
 
     steps:
@@ -134,6 +134,12 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve REGION
+        run: |
+          REGION="${{ secrets.VERTEX_REGION }}"
+          REGION="${REGION:-us-central1}"
+          echo "REGION=$REGION" >> $GITHUB_ENV
 
       - name: Set PYTHONPATH to repo root
         run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
@@ -158,6 +164,8 @@ jobs:
           SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
           MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
 
+          echo "Using image URI: $IMAGE_URI"
+
           MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
             --project_id "$GCP_PROJECT" \
             --region "$REGION" \
@@ -171,7 +179,7 @@ jobs:
           echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
           echo "Model registered: $MODEL_RESOURCE"
 
-      - name: Deploy to Cloud Run (with Vertex AI Model Registry)
+      - name: Deploy to Cloud Run
         run: |
           python scripts/deploy_cloud_run_vertex.py \
             --project_id "$GCP_PROJECT" \
@@ -180,5 +188,3 @@ jobs:
             --image_uri "$IMAGE_URI" \
             --model_display_name "$MODEL_DISPLAY_NAME" \
             --service_account "${{ secrets.CLOUD_RUN_SA_EMAIL }}"
-
-
