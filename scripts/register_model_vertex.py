@@ -1,9 +1,6 @@
 """
 Register trained model from GCS to Vertex AI Model Registry.
 
-After training saves model.pkl to GCS, this script registers it in Vertex AI
-Model Registry so it can be deployed to Vertex AI Endpoints.
-
 Usage:
     python scripts/register_model_vertex.py \
         --project_id iris-100 \
@@ -17,12 +14,19 @@ Usage:
 
 import argparse
 import logging
+import sys
 from datetime import datetime
 from urllib.parse import urlparse
 
 from google.cloud import aiplatform
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Log to stderr only — stdout is reserved for the resource name output
+# so that shell command substitution $(...) captures only the resource name
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stderr,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -38,21 +42,11 @@ def register_model(
     """
     Register a model in Vertex AI Model Registry.
 
-    Args:
-        project_id: GCP project ID
-        region: Vertex AI region (e.g., us-central1)
-        model_gcs_uri: GCS URI to model.pkl
-        scaler_gcs_uri: GCS URI to scaler.pkl
-        display_name: Display name for the model in Vertex AI
-        serving_container_image_uri: Docker image URI to use for serving
-        description: Optional description
-
     Returns:
         Full resource name of the registered model
     """
     aiplatform.init(project=project_id, location=region)
 
-    # Derive artifact directory from model file URI
     parsed = urlparse(model_gcs_uri)
     bucket = parsed.netloc
     model_path = parsed.path.lstrip("/")
@@ -85,17 +79,13 @@ def register_model(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Register model in Vertex AI Model Registry")
-    parser.add_argument("--project_id", required=True, help="GCP project ID")
-    parser.add_argument("--region", required=True, help="Vertex AI region, e.g. us-central1")
-    parser.add_argument("--model_gcs_uri", required=True, help="GCS URI to model.pkl")
-    parser.add_argument("--scaler_gcs_uri", required=True, help="GCS URI to scaler.pkl")
-    parser.add_argument("--display_name", required=True, help="Display name for the model")
-    parser.add_argument(
-        "--serving_container_image_uri",
-        required=True,
-        help="Docker image URI for serving, e.g. us-central1-docker.pkg.dev/project/repo/image:tag",
-    )
-    parser.add_argument("--description", default="", help="Optional model description")
+    parser.add_argument("--project_id", required=True)
+    parser.add_argument("--region", required=True)
+    parser.add_argument("--model_gcs_uri", required=True)
+    parser.add_argument("--scaler_gcs_uri", required=True)
+    parser.add_argument("--display_name", required=True)
+    parser.add_argument("--serving_container_image_uri", required=True)
+    parser.add_argument("--description", default="")
     return parser.parse_args()
 
 
@@ -110,4 +100,6 @@ if __name__ == "__main__":
         serving_container_image_uri=args.serving_container_image_uri,
         description=args.description,
     )
+    # Print ONLY the resource name to stdout — all other output goes to stderr
+    # This ensures $(...) shell capture gets a clean single-line value
     print(resource_name)
