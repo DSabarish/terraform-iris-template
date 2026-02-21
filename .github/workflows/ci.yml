@@ -118,9 +118,6 @@ jobs:
     needs: [pipeline, build_image]
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
-    # NOTE: Do NOT put needs.build_image.outputs.image_uri in the job-level env block.
-    # Values from needs.*.outputs do not interpolate correctly into shell run steps
-    # when set at the job level. Use ${{ }} directly inside run steps instead.
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       SERVICE_NAME: iris-ml-api
@@ -138,21 +135,20 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Resolve REGION and IMAGE_URI
+        env:
+          IMAGE_URI_FROM_OUTPUT: ${{ needs.build_image.outputs.image_uri }}
         run: |
           REGION="${{ secrets.VERTEX_REGION }}"
           REGION="${REGION:-us-central1}"
           echo "REGION=$REGION" >> $GITHUB_ENV
 
-          # Inject IMAGE_URI via ${{ }} expression — the only reliable way to
-          # pass needs.*.outputs values into shell variables across jobs
-          IMAGE_URI="${{ needs.build_image.outputs.image_uri }}"
-          if [ -z "$IMAGE_URI" ]; then
+          if [ -z "$IMAGE_URI_FROM_OUTPUT" ]; then
             echo "ERROR: IMAGE_URI is empty. build_image job output was not captured."
             exit 1
           fi
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          echo "IMAGE_URI=$IMAGE_URI_FROM_OUTPUT" >> $GITHUB_ENV
           echo "Resolved REGION:    $REGION"
-          echo "Resolved IMAGE_URI: $IMAGE_URI"
+          echo "Resolved IMAGE_URI: $IMAGE_URI_FROM_OUTPUT"
 
       - name: Set PYTHONPATH to repo root
         run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
