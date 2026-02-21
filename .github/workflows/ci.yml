@@ -51,8 +51,7 @@ jobs:
           python-version: "3.11"
 
       - name: Write GCP service account key
-        run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
+        run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
 
       - name: Install dependencies
         run: |
@@ -75,12 +74,14 @@ jobs:
     needs: pipeline
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
+    # ── export image_uri so register_and_deploy can consume it ──────────────
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       REGION: ${{ secrets.VERTEX_REGION || 'us-central1' }}
       REPO_NAME: iris-ml
       IMAGE_NAME: iris-ml-api
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
 
     steps:
       - uses: actions/checkout@v4
@@ -94,21 +95,21 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
       - name: Build and push Docker image
+        id: build
         run: |
           SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
           IMAGE_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:${SHA_SHORT}"
           LATEST_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:latest"
-          
+
           docker build -t $IMAGE_URI -t $LATEST_URI .
           docker push $IMAGE_URI
           docker push $LATEST_URI
-          
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-          echo "LATEST_IMAGE_URI=$LATEST_URI" >> $GITHUB_ENV
+
+          # GITHUB_OUTPUT persists values across jobs; GITHUB_ENV does not
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
   register_and_deploy:
     name: Register Model & Deploy
@@ -120,6 +121,8 @@ jobs:
       REGION: ${{ secrets.VERTEX_REGION || 'us-central1' }}
       SERVICE_NAME: iris-ml-api
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
+      # ── consume the image URI exported by build_image ────────────────────
+      IMAGE_URI: ${{ needs.build_image.outputs.image_uri }}
 
     steps:
       - uses: actions/checkout@v4
@@ -141,8 +144,7 @@ jobs:
           python-version: "3.11"
 
       - name: Write GCP service account key
-        run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
+        run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
 
       - name: Install dependencies
         run: |
@@ -155,32 +157,28 @@ jobs:
           MODEL_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/models/${{ github.sha }}/model.pkl"
           SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
           MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
-          
+
           MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
             --project_id "$GCP_PROJECT" \
             --region "$REGION" \
             --model_gcs_uri "$MODEL_URI" \
             --scaler_gcs_uri "$SCALER_URI" \
             --display_name "$MODEL_DISPLAY_NAME" \
+            --serving_container_image_uri "$IMAGE_URI" \
             --description "Iris classifier from commit ${{ github.sha }}")
-          
+
           echo "MODEL_RESOURCE_NAME=$MODEL_RESOURCE" >> $GITHUB_ENV
           echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
           echo "Model registered: $MODEL_RESOURCE"
 
       - name: Deploy to Cloud Run (with Vertex AI Model Registry)
         run: |
-          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
-          IMAGE_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/iris-ml/iris-ml-api:${SHA_SHORT}"
-          SA_EMAIL="${{ secrets.CLOUD_RUN_SA_EMAIL }}"
-          
           python scripts/deploy_cloud_run_vertex.py \
             --project_id "$GCP_PROJECT" \
             --region "$REGION" \
             --service_name "$SERVICE_NAME" \
             --image_uri "$IMAGE_URI" \
             --model_display_name "$MODEL_DISPLAY_NAME" \
-            --service_account "$SA_EMAIL"
-
+            --service_account "${{ secrets.CLOUD_RUN_SA_EMAIL }}"
 
 

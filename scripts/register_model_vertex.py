@@ -11,12 +11,14 @@ Usage:
         --model_gcs_uri gs://bucket/artifacts/models/latest/model.pkl \
         --scaler_gcs_uri gs://bucket/artifacts/scalers/scaler.pkl \
         --display_name iris-classifier \
+        --serving_container_image_uri us-central1-docker.pkg.dev/project/iris-ml/iris-ml-api:latest \
         --description "Iris flower classification model"
 """
 
 import argparse
 import logging
 from datetime import datetime
+from urllib.parse import urlparse
 
 from google.cloud import aiplatform
 
@@ -30,6 +32,7 @@ def register_model(
     model_gcs_uri: str,
     scaler_gcs_uri: str,
     display_name: str,
+    serving_container_image_uri: str,
     description: str = "",
 ) -> str:
     """
@@ -41,6 +44,7 @@ def register_model(
         model_gcs_uri: GCS URI to model.pkl
         scaler_gcs_uri: GCS URI to scaler.pkl
         display_name: Display name for the model in Vertex AI
+        serving_container_image_uri: Docker image URI to use for serving
         description: Optional description
 
     Returns:
@@ -48,18 +52,11 @@ def register_model(
     """
     aiplatform.init(project=project_id, location=region)
 
-    # Create a model directory structure in GCS that Vertex AI expects
-    # Vertex AI Model Registry expects the artifact_uri to point to a directory
-    # containing model files, not individual files
-    import os
-    from urllib.parse import urlparse
-
+    # Derive artifact directory from model file URI
     parsed = urlparse(model_gcs_uri)
     bucket = parsed.netloc
     model_path = parsed.path.lstrip("/")
-    model_dir = "/".join(model_path.split("/")[:-1])  # Remove filename, keep directory
-
-    # Use the model directory as artifact_uri (Vertex AI will look for model files there)
+    model_dir = "/".join(model_path.split("/")[:-1])
     artifact_uri = f"gs://{bucket}/{model_dir}"
 
     logger.info("Registering model in Vertex AI Model Registry...")
@@ -67,13 +64,16 @@ def register_model(
     logger.info("  Artifact URI: %s", artifact_uri)
     logger.info("  Model file: %s", model_gcs_uri)
     logger.info("  Scaler file: %s", scaler_gcs_uri)
+    logger.info("  Serving container: %s", serving_container_image_uri)
 
-    # Register the model
     model = aiplatform.Model.upload(
         display_name=display_name,
         artifact_uri=artifact_uri,
-        serving_container_image_uri=None,  # We'll use custom container in deployment
-        description=description or f"Iris classifier model registered at {datetime.utcnow().isoformat()}",
+        serving_container_image_uri=serving_container_image_uri,
+        serving_container_ports=[8080],
+        serving_container_predict_route="/predict",
+        serving_container_health_route="/health",
+        description=description or f"Iris classifier registered at {datetime.utcnow().isoformat()}",
     )
 
     logger.info("Model registered successfully!")
@@ -90,6 +90,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model_gcs_uri", required=True, help="GCS URI to model.pkl")
     parser.add_argument("--scaler_gcs_uri", required=True, help="GCS URI to scaler.pkl")
     parser.add_argument("--display_name", required=True, help="Display name for the model")
+    parser.add_argument(
+        "--serving_container_image_uri",
+        required=True,
+        help="Docker image URI for serving, e.g. us-central1-docker.pkg.dev/project/repo/image:tag",
+    )
     parser.add_argument("--description", default="", help="Optional model description")
     return parser.parse_args()
 
@@ -102,6 +107,7 @@ if __name__ == "__main__":
         model_gcs_uri=args.model_gcs_uri,
         scaler_gcs_uri=args.scaler_gcs_uri,
         display_name=args.display_name,
+        serving_container_image_uri=args.serving_container_image_uri,
         description=args.description,
     )
     print(resource_name)

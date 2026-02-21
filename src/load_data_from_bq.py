@@ -1,4 +1,6 @@
 """
+src/load_data_from_bq.py
+
 load_data_from_bq.py
 --------------------
 Exports raw Iris data from BigQuery to GCS as a CSV file.
@@ -13,14 +15,41 @@ Usage:
 """
 
 import argparse
+import io
 import logging
+import re
 
 from google.cloud import bigquery, storage
 import pandas as pd
-import io
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+# GCS bucket names: 3-63 chars, lowercase letters, numbers, hyphens, dots only
+_VALID_BUCKET_RE = re.compile(r'^[a-z0-9][a-z0-9\-_.]{1,61}[a-z0-9]$')
+
+
+def _normalize_bucket_name(bucket: str) -> str:
+    """Normalize and validate a GCS bucket name."""
+    bucket = bucket.strip()
+    if bucket.startswith("gs://"):
+        bucket = bucket[5:]
+    # Strip any accidental path components (e.g. "my-bucket/some/path")
+    bucket = bucket.split("/")[0]
+    if not bucket:
+        raise ValueError("GCS bucket name cannot be empty after normalization")
+    if not _VALID_BUCKET_RE.match(bucket):
+        raise ValueError(
+            f"Invalid GCS bucket name after normalization: '{bucket}'. "
+            "Bucket names must be 3-63 chars, lowercase, and contain only "
+            "letters, numbers, hyphens, and dots."
+        )
+    return bucket
+
+
+def _normalize_prefix(prefix: str) -> str:
+    """Strip leading/trailing slashes from a GCS object prefix."""
+    return prefix.strip().strip("/")
 
 
 def export_bq_to_gcs(
@@ -34,16 +63,12 @@ def export_bq_to_gcs(
     Reads the raw iris table from BigQuery and writes it to GCS as a CSV.
     Returns the GCS URI of the exported file.
     """
-    # Normalize bucket name: remove gs:// prefix and strip whitespace
-    gcs_bucket = gcs_bucket.strip()
-    if gcs_bucket.startswith("gs://"):
-        gcs_bucket = gcs_bucket[5:]
-    if "/" in gcs_bucket:
-        gcs_bucket = gcs_bucket.split("/")[0]
-    
-    if not gcs_bucket:
-        raise ValueError("GCS bucket name cannot be empty")
-    
+    gcs_bucket = _normalize_bucket_name(gcs_bucket)
+    gcs_prefix = _normalize_prefix(gcs_prefix)
+
+    # Log the resolved bucket name so misconfigured secrets are immediately visible
+    logger.info("Resolved GCS bucket: '%s'", gcs_bucket)
+
     client = bigquery.Client(project=project_id)
     table_ref = f"{project_id}.{dataset_id}.{table_id}"
 
