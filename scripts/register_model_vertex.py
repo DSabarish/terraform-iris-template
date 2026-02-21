@@ -20,8 +20,8 @@ from urllib.parse import urlparse
 
 from google.cloud import aiplatform
 
-# Log to stderr only — stdout is reserved for the resource name output
-# so that shell command substitution $(...) captures only the resource name
+# CRITICAL: stream=sys.stderr ensures ALL log output goes to stderr only.
+# stdout must be clean so that shell $(...) captures only the printed resource name.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -39,12 +39,6 @@ def register_model(
     serving_container_image_uri: str,
     description: str = "",
 ) -> str:
-    """
-    Register a model in Vertex AI Model Registry.
-
-    Returns:
-        Full resource name of the registered model
-    """
     aiplatform.init(project=project_id, location=region)
 
     parsed = urlparse(model_gcs_uri)
@@ -100,6 +94,5 @@ if __name__ == "__main__":
         serving_container_image_uri=args.serving_container_image_uri,
         description=args.description,
     )
-    # Print ONLY the resource name to stdout — all other output goes to stderr
-    # This ensures $(...) shell capture gets a clean single-line value
+    # ONLY the resource name goes to stdout — nothing else
     print(resource_name)

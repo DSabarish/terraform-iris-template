@@ -107,9 +107,6 @@ jobs:
           docker push $IMAGE_URI
           docker push $LATEST_URI
 
-          # Base64-encode to prevent GitHub secret scanner blocking the output
-          # The image URI contains GCP_PROJECT which matches a secret, causing
-          # GitHub to silently drop the output unless we encode it
           IMAGE_URI_B64=$(echo -n "$IMAGE_URI" | base64 -w 0)
           echo "image_uri_b64=$IMAGE_URI_B64" >> $GITHUB_OUTPUT
 
@@ -140,7 +137,7 @@ jobs:
           IMAGE_URI_B64: ${{ needs.build_image.outputs.image_uri_b64 }}
         run: |
           if [ -z "$IMAGE_URI_B64" ]; then
-            echo "ERROR: IMAGE_URI_B64 is empty. build_image output was not captured."
+            echo "ERROR: IMAGE_URI_B64 is empty."
             exit 1
           fi
           IMAGE_URI=$(echo -n "$IMAGE_URI_B64" | base64 -d)
@@ -173,6 +170,7 @@ jobs:
           echo "Using REGION:    $REGION"
           echo "Using IMAGE_URI: $IMAGE_URI"
 
+          # Capture only stdout (resource name); stderr (logs) go to terminal
           MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
             --project_id "$GCP_PROJECT" \
             --region "$REGION" \
@@ -180,11 +178,13 @@ jobs:
             --scaler_gcs_uri "$SCALER_URI" \
             --display_name "$MODEL_DISPLAY_NAME" \
             --serving_container_image_uri "$IMAGE_URI" \
-            --description "Iris classifier from commit ${{ github.sha }}")
+            --description "Iris classifier from commit ${{ github.sha }}" 2>&1 1>/tmp/model_resource.txt)
 
+          MODEL_RESOURCE=$(cat /tmp/model_resource.txt | tail -1)
+
+          echo "Model registered: $MODEL_RESOURCE"
           echo "MODEL_RESOURCE_NAME=$MODEL_RESOURCE" >> $GITHUB_ENV
           echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
-          echo "Model registered: $MODEL_RESOURCE"
 
       - name: Deploy to Cloud Run
         run: |
