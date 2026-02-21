@@ -69,255 +69,125 @@ jobs:
         env:
           GIT_COMMIT_SHA: ${{ github.sha }}
 
-  # build_image:
-  #   name: Build Docker image
-  #   needs: pipeline
-  #   if: github.ref == 'refs/heads/dev-branch-iris'
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     image_uri: ${{ steps.build.outputs.image_uri }}
-  #   env:
-  #     GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-  #     REPO_NAME: iris-ml
-  #     IMAGE_NAME: iris-ml-api
-
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - name: Authenticate to GCP
-  #       uses: google-github-actions/auth@v2
-  #       with:
-  #         credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-  #     - name: Set up Cloud SDK
-  #       uses: google-github-actions/setup-gcloud@v2
-
-  #     - name: Configure Docker for Artifact Registry
-  #       run: |
-  #         REGION="${{ secrets.VERTEX_REGION }}"
-  #         REGION="${REGION:-us-central1}"
-  #         echo "REGION=$REGION" >> $GITHUB_ENV
-  #         gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
-
-  #     - name: Build and push Docker image
-  #       id: build
-  #       run: |
-  #         SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
-  #         IMAGE_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:${SHA_SHORT}"
-  #         LATEST_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:latest"
-
-  #         docker build -t $IMAGE_URI -t $LATEST_URI .
-  #         docker push $IMAGE_URI
-  #         docker push $LATEST_URI
-
-  #         echo "Built and pushed: $IMAGE_URI"
-  #         echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-
-  # register_and_deploy:
-  #   name: Register Model & Deploy
-  #   needs: [pipeline, build_image]
-  #   if: github.ref == 'refs/heads/dev-branch-iris'
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-  #     SERVICE_NAME: iris-ml-api
-  #     GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
-
-  #   steps:
-  #     - uses: actions/checkout@v4
-
-  #     - name: Authenticate to GCP
-  #       uses: google-github-actions/auth@v2
-  #       with:
-  #         credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-  #     - name: Set up Cloud SDK
-  #       uses: google-github-actions/setup-gcloud@v2
-
-  #     - name: Resolve REGION and IMAGE_URI
-  #       env:
-  #         IMAGE_URI_FROM_OUTPUT: ${{ needs.build_image.outputs.image_uri }}
-  #       run: |
-  #         REGION="${{ secrets.VERTEX_REGION }}"
-  #         REGION="${REGION:-us-central1}"
-  #         echo "REGION=$REGION" >> $GITHUB_ENV
-
-  #         if [ -z "$IMAGE_URI_FROM_OUTPUT" ]; then
-  #           echo "ERROR: IMAGE_URI is empty. build_image job output was not captured."
-  #           exit 1
-  #         fi
-  #         echo "IMAGE_URI=$IMAGE_URI_FROM_OUTPUT" >> $GITHUB_ENV
-  #         echo "Resolved REGION:    $REGION"
-  #         echo "Resolved IMAGE_URI: $IMAGE_URI_FROM_OUTPUT"
-
-  #     - name: Set PYTHONPATH to repo root
-  #       run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
-
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: "3.11"
-
-  #     - name: Write GCP service account key
-  #       run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
-
-  #     - name: Install dependencies
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install -r requirements.txt
-
-  #     - name: Register model in Vertex AI Model Registry
-  #       id: register_model
-  #       run: |
-  #         MODEL_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/models/${{ github.sha }}/model.pkl"
-  #         SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
-  #         MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
-
-  #         echo "Using REGION:    $REGION"
-  #         echo "Using IMAGE_URI: $IMAGE_URI"
-
-  #         MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
-  #           --project_id "$GCP_PROJECT" \
-  #           --region "$REGION" \
-  #           --model_gcs_uri "$MODEL_URI" \
-  #           --scaler_gcs_uri "$SCALER_URI" \
-  #           --display_name "$MODEL_DISPLAY_NAME" \
-  #           --serving_container_image_uri "$IMAGE_URI" \
-  #           --description "Iris classifier from commit ${{ github.sha }}")
-
-  #         echo "MODEL_RESOURCE_NAME=$MODEL_RESOURCE" >> $GITHUB_ENV
-  #         echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
-  #         echo "Model registered: $MODEL_RESOURCE"
-
-  #     - name: Deploy to Cloud Run
-  #       run: |
-  #         python scripts/deploy_cloud_run_vertex.py \
-  #           --project_id "$GCP_PROJECT" \
-  #           --region "$REGION" \
-  #           --service_name "$SERVICE_NAME" \
-  #           --image_uri "$IMAGE_URI" \
-  #           --model_display_name "$MODEL_DISPLAY_NAME" \
-  #           --service_account "${{ secrets.CLOUD_RUN_SA_EMAIL }}"
   build_image:
-      name: Build Docker image
-      needs: pipeline
-      if: github.ref == 'refs/heads/dev-branch-iris'
-      runs-on: ubuntu-latest
-      outputs:
-        image_uri: ${{ steps.build.outputs.image_uri }}
-      env:
-        GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-        REPO_NAME: iris-ml
-        IMAGE_NAME: iris-ml-api
-        REGION: us-central1   # hardcoded — do not use a secret for region
+    name: Build Docker image
+    needs: pipeline
+    if: github.ref == 'refs/heads/dev-branch-iris'
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    env:
+      GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+      REPO_NAME: iris-ml
+      IMAGE_NAME: iris-ml-api
+      REGION: us-central1
 
-      steps:
-        - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Authenticate to GCP
-          uses: google-github-actions/auth@v2
-          with:
-            credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-        - name: Set up Cloud SDK
-          uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-        - name: Configure Docker for Artifact Registry
-          run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
-        - name: Build and push Docker image
-          id: build
-          run: |
-            SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
-            IMAGE_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:${SHA_SHORT}"
-            LATEST_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:latest"
+      - name: Build and push Docker image
+        id: build
+        run: |
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
+          IMAGE_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:${SHA_SHORT}"
+          LATEST_URI="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO_NAME}/${IMAGE_NAME}:latest"
 
-            docker build -t $IMAGE_URI -t $LATEST_URI .
-            docker push $IMAGE_URI
-            docker push $LATEST_URI
+          docker build -t $IMAGE_URI -t $LATEST_URI .
+          docker push $IMAGE_URI
+          docker push $LATEST_URI
 
-            # Debug: confirm what we're writing to GITHUB_OUTPUT
-            echo "Writing to GITHUB_OUTPUT: image_uri=$IMAGE_URI"
-            echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          echo "Writing to GITHUB_OUTPUT: image_uri=$IMAGE_URI"
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
 
-    register_and_deploy:
-      name: Register Model & Deploy
-      needs: [pipeline, build_image]
-      if: github.ref == 'refs/heads/dev-branch-iris'
-      runs-on: ubuntu-latest
-      env:
-        GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
-        SERVICE_NAME: iris-ml-api
-        REGION: us-central1   # hardcoded — keeps it out of secrets redaction
-        GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
+  register_and_deploy:
+    name: Register Model & Deploy
+    needs: [pipeline, build_image]
+    if: github.ref == 'refs/heads/dev-branch-iris'
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+      SERVICE_NAME: iris-ml-api
+      REGION: us-central1
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa-key.json
 
-      steps:
-        - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-        - name: Authenticate to GCP
-          uses: google-github-actions/auth@v2
-          with:
-            credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-        - name: Set up Cloud SDK
-          uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-        - name: Capture IMAGE_URI from build_image output
-          env:
-            IMAGE_URI_FROM_OUTPUT: ${{ needs.build_image.outputs.image_uri }}
-          run: |
-            echo "Raw IMAGE_URI_FROM_OUTPUT: $IMAGE_URI_FROM_OUTPUT"
-            if [ -z "$IMAGE_URI_FROM_OUTPUT" ]; then
-              echo "ERROR: IMAGE_URI is empty."
-              exit 1
-            fi
-            echo "IMAGE_URI=$IMAGE_URI_FROM_OUTPUT" >> $GITHUB_ENV
+      - name: Capture IMAGE_URI from build_image output
+        env:
+          IMAGE_URI_FROM_OUTPUT: ${{ needs.build_image.outputs.image_uri }}
+        run: |
+          echo "Raw IMAGE_URI_FROM_OUTPUT: $IMAGE_URI_FROM_OUTPUT"
+          if [ -z "$IMAGE_URI_FROM_OUTPUT" ]; then
+            echo "ERROR: IMAGE_URI is empty. build_image job output was not captured."
+            exit 1
+          fi
+          echo "IMAGE_URI=$IMAGE_URI_FROM_OUTPUT" >> $GITHUB_ENV
 
-        - name: Set PYTHONPATH to repo root
-          run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
+      - name: Set PYTHONPATH to repo root
+        run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
 
-        - name: Set up Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: "3.11"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-        - name: Write GCP service account key
-          run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
+      - name: Write GCP service account key
+        run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-sa-key.json
 
-        - name: Install dependencies
-          run: |
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-        - name: Register model in Vertex AI Model Registry
-          id: register_model
-          run: |
-            MODEL_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/models/${{ github.sha }}/model.pkl"
-            SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
-            MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
+      - name: Register model in Vertex AI Model Registry
+        id: register_model
+        run: |
+          MODEL_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/models/${{ github.sha }}/model.pkl"
+          SCALER_URI="gs://${{ secrets.GCS_BUCKET }}/artifacts/scalers/scaler.pkl"
+          MODEL_DISPLAY_NAME="iris-classifier-${{ github.sha }}"
 
-            echo "Using REGION:    $REGION"
-            echo "Using IMAGE_URI: $IMAGE_URI"
+          echo "Using REGION:    $REGION"
+          echo "Using IMAGE_URI: $IMAGE_URI"
 
-            MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
-              --project_id "$GCP_PROJECT" \
-              --region "$REGION" \
-              --model_gcs_uri "$MODEL_URI" \
-              --scaler_gcs_uri "$SCALER_URI" \
-              --display_name "$MODEL_DISPLAY_NAME" \
-              --serving_container_image_uri "$IMAGE_URI" \
-              --description "Iris classifier from commit ${{ github.sha }}")
+          MODEL_RESOURCE=$(python scripts/register_model_vertex.py \
+            --project_id "$GCP_PROJECT" \
+            --region "$REGION" \
+            --model_gcs_uri "$MODEL_URI" \
+            --scaler_gcs_uri "$SCALER_URI" \
+            --display_name "$MODEL_DISPLAY_NAME" \
+            --serving_container_image_uri "$IMAGE_URI" \
+            --description "Iris classifier from commit ${{ github.sha }}")
 
-            echo "MODEL_RESOURCE_NAME=$MODEL_RESOURCE" >> $GITHUB_ENV
-            echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
-            echo "Model registered: $MODEL_RESOURCE"
+          echo "MODEL_RESOURCE_NAME=$MODEL_RESOURCE" >> $GITHUB_ENV
+          echo "MODEL_DISPLAY_NAME=$MODEL_DISPLAY_NAME" >> $GITHUB_ENV
+          echo "Model registered: $MODEL_RESOURCE"
 
-        - name: Deploy to Cloud Run
-          run: |
-            python scripts/deploy_cloud_run_vertex.py \
-              --project_id "$GCP_PROJECT" \
-              --region "$REGION" \
-              --service_name "$SERVICE_NAME" \
-              --image_uri "$IMAGE_URI" \
-              --model_display_name "$MODEL_DISPLAY_NAME" \
-              --service_account "${{ secrets.CLOUD_RUN_SA_EMAIL }}"
+      - name: Deploy to Cloud Run
+        run: |
+          python scripts/deploy_cloud_run_vertex.py \
+            --project_id "$GCP_PROJECT" \
+            --region "$REGION" \
+            --service_name "$SERVICE_NAME" \
+            --image_uri "$IMAGE_URI" \
+            --model_display_name "$MODEL_DISPLAY_NAME" \
+            --service_account "${{ secrets.CLOUD_RUN_SA_EMAIL }}"
