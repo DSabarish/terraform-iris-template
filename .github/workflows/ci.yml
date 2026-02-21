@@ -75,7 +75,7 @@ jobs:
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
     outputs:
-      image_uri: ${{ steps.build.outputs.image_uri }}
+      image_uri_b64: ${{ steps.build.outputs.image_uri_b64 }}
     env:
       GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
       REPO_NAME: iris-ml
@@ -107,8 +107,11 @@ jobs:
           docker push $IMAGE_URI
           docker push $LATEST_URI
 
-          echo "Writing to GITHUB_OUTPUT: image_uri=$IMAGE_URI"
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+          # Base64-encode to prevent GitHub secret scanner blocking the output
+          # The image URI contains GCP_PROJECT which matches a secret, causing
+          # GitHub to silently drop the output unless we encode it
+          IMAGE_URI_B64=$(echo -n "$IMAGE_URI" | base64 -w 0)
+          echo "image_uri_b64=$IMAGE_URI_B64" >> $GITHUB_OUTPUT
 
   register_and_deploy:
     name: Register Model & Deploy
@@ -132,16 +135,17 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Capture IMAGE_URI from build_image output
+      - name: Decode IMAGE_URI
         env:
-          IMAGE_URI_FROM_OUTPUT: ${{ needs.build_image.outputs.image_uri }}
+          IMAGE_URI_B64: ${{ needs.build_image.outputs.image_uri_b64 }}
         run: |
-          echo "Raw IMAGE_URI_FROM_OUTPUT: $IMAGE_URI_FROM_OUTPUT"
-          if [ -z "$IMAGE_URI_FROM_OUTPUT" ]; then
-            echo "ERROR: IMAGE_URI is empty. build_image job output was not captured."
+          if [ -z "$IMAGE_URI_B64" ]; then
+            echo "ERROR: IMAGE_URI_B64 is empty. build_image output was not captured."
             exit 1
           fi
-          echo "IMAGE_URI=$IMAGE_URI_FROM_OUTPUT" >> $GITHUB_ENV
+          IMAGE_URI=$(echo -n "$IMAGE_URI_B64" | base64 -d)
+          echo "Decoded IMAGE_URI: $IMAGE_URI"
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       - name: Set PYTHONPATH to repo root
         run: echo "PYTHONPATH=$PYTHONPATH:${{ github.workspace }}" >> $GITHUB_ENV
