@@ -201,11 +201,13 @@ jobs:
     needs: register_and_deploy
     if: github.ref == 'refs/heads/dev-branch-iris'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0      # fetch full history so we can push to other branches
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure git
@@ -216,8 +218,6 @@ jobs:
       - name: Push to qa-branch-iris
         run: |
           git fetch origin
-          # Create qa-branch-iris from dev-branch-iris if it doesn't exist
-          git checkout -B qa-branch-iris origin/dev-branch-iris 2>/dev/null || \
-            git checkout -B qa-branch-iris
+          git checkout -B qa-branch-iris origin/dev-branch-iris
           git push origin qa-branch-iris --force-with-lease
           echo "Successfully promoted commit ${{ github.sha }} to qa-branch-iris"
