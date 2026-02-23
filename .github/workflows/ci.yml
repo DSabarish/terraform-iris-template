@@ -221,3 +221,5 @@ jobs:
           git checkout -B qa-branch-iris origin/dev-branch-iris
           git push origin qa-branch-iris --force-with-lease
           echo "Successfully promoted commit ${{ github.sha }} to qa-branch-iris"
+          echo "::set-output name=branch::qa-branch-iris"
+          
