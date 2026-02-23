@@ -1,17 +1,5 @@
 """
-src/load_data_from_bq.py
-
-load_data_from_bq.py
---------------------
-Exports raw Iris data from BigQuery to GCS as a CSV file.
-
-Usage:
-    python load_data_from_bq.py \
-        --project_id <GCP_PROJECT_ID> \
-        --dataset_id iris_dataset \
-        --table_id iris_raw \
-        --gcs_bucket <BUCKET_NAME> \
-        --gcs_prefix data/raw
+load_data_from_bq.py — Export BigQuery table to GCS CSV. Uses cfg/base.yaml.
 """
 
 import argparse
@@ -22,7 +10,10 @@ import re
 from google.cloud import bigquery, storage
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from cfg import get_config
+
+_config = get_config()
+logging.basicConfig(level=logging.INFO, format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
 # GCS bucket names: 3-63 chars, lowercase letters, numbers, hyphens, dots only
@@ -77,7 +68,8 @@ def export_bq_to_gcs(
     df: pd.DataFrame = client.query(query).to_dataframe()
     logger.info("Retrieved %d rows from BigQuery", len(df))
 
-    gcs_path = f"{gcs_prefix}/iris_raw.csv"
+    raw_csv = _config["gcs"]["filenames"]["raw_csv"]
+    gcs_path = f"{gcs_prefix}/{raw_csv}"
     gcs_uri = f"gs://{gcs_bucket}/{gcs_path}"
 
     storage_client = storage.Client(project=project_id)
@@ -93,12 +85,14 @@ def export_bq_to_gcs(
 
 
 def parse_args():
+    bq = _config["bigquery"]
+    p = _config["gcs"]["paths"]
     parser = argparse.ArgumentParser(description="Export BQ table to GCS CSV")
     parser.add_argument("--project_id", required=True)
-    parser.add_argument("--dataset_id", default="iris_dataset")
-    parser.add_argument("--table_id", default="iris_raw")
+    parser.add_argument("--dataset_id", default=bq["dataset_id"])
+    parser.add_argument("--table_id", default=bq["table_id"])
     parser.add_argument("--gcs_bucket", required=True)
-    parser.add_argument("--gcs_prefix", default="data/raw")
+    parser.add_argument("--gcs_prefix", default=p["raw"])
     return parser.parse_args()
 
 

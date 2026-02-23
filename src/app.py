@@ -2,18 +2,10 @@
 app.py
 ------
 FastAPI application serving Iris predictions and optional static frontend.
-Deployed on Cloud Run.
-
-Endpoints:
-  GET  /               - Frontend (index.html) when frontend dir is present
-  GET  /health         - Health check
-  GET  /model-info     - Model metadata
-  POST /predict        - Single prediction
-  POST /predict/batch  - Batch predictions
+Deployed on Cloud Run. Configuration from cfg/base.yaml (env overrides).
 """
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
@@ -21,12 +13,14 @@ from typing import List
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, validator
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
+from cfg import get_config
 from inference import predict, load_model, load_scaler
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_config = get_config()
+logging.basicConfig(level=getattr(logging, _config["logging"]["level"].upper(), logging.INFO), format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
 
@@ -40,20 +34,20 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_app_cfg = _config["app"]
 app = FastAPI(
-    title="Iris ML API",
-    description="Production-ready Iris flower classification API",
-    version="1.0.0",
+    title=_app_cfg["title"],
+    description=_app_cfg["description"],
+    version=_app_cfg["version"],
     lifespan=lifespan,
 )
-
-# Allow browser requests from file:// or any origin (for frontend)
+cors = _app_cfg.get("cors", {})
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors.get("allow_origins", ["*"]),
+    allow_credentials=cors.get("allow_credentials", False),
+    allow_methods=cors.get("allow_methods", ["*"]),
+    allow_headers=cors.get("allow_headers", ["*"]),
 )
 
 # Serve frontend at / when frontend dir is present (Docker: COPY frontend/ ./frontend/)
@@ -90,16 +84,17 @@ class BatchPredictionRequest(BaseModel):
 
 @app.get("/health", tags=["Ops"])
 def health():
-    return {"status": "ok", "service": "iris-ml-api"}
+    return {"status": "ok", "service": _app_cfg.get("title", "iris-ml-api")}
 
 
 @app.get("/model-info", tags=["Ops"])
 def model_info():
+    gcs = _config["gcs"]
     return {
-        "model_bucket": os.environ.get("GCS_BUCKET"),
-        "model_prefix": os.environ.get("MODEL_PREFIX", "artifacts/models/latest"),
-        "scaler_prefix": os.environ.get("SCALER_PREFIX", "artifacts/scalers"),
-        "environment": os.environ.get("ENVIRONMENT", "unknown"),
+        "model_bucket": gcs.get("bucket") or "",
+        "model_prefix": gcs["paths"].get("model_latest", "artifacts/models/latest"),
+        "scaler_prefix": gcs["paths"].get("scaler", "artifacts/scalers"),
+        "environment": _app_cfg.get("environment", "unknown"),
     }
 
 
@@ -136,7 +131,7 @@ def batch_predict(request: BatchPredictionRequest):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
+    port = _app_cfg.get("port", 8080)
     try:
         uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
     except KeyboardInterrupt:

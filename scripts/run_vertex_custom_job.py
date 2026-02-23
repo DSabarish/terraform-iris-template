@@ -23,10 +23,15 @@ Usage (example):
 import argparse
 import datetime
 import logging
+import sys
+from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from cfg import get_config
 from google.cloud import aiplatform
 
+_config = get_config()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -85,19 +90,17 @@ def submit_vertex_custom_job(
 
 
 def parse_args() -> argparse.Namespace:
+    bq = _config["bigquery"]
+    v = _config.get("vertex", {}).get("custom_job", {})
     parser = argparse.ArgumentParser(description="Run Iris pipeline as a Vertex AI Custom Job")
     parser.add_argument("--project_id", required=True, help="GCP project ID")
-    parser.add_argument("--region", required=True, help="Vertex AI region, e.g. us-central1")
+    parser.add_argument("--region", default=_config["gcp"].get("region", "us-central1"), help="Vertex AI region")
     parser.add_argument("--gcs_bucket", required=True, help="GCS bucket for data and models")
     parser.add_argument("--image_uri", required=True, help="Container image URI in Artifact Registry")
     parser.add_argument("--service_account", required=True, help="Service account email for the job")
-    parser.add_argument("--dataset_id", default="iris_dataset", help="BigQuery dataset ID")
-    parser.add_argument("--table_id", default="iris_raw", help="BigQuery table ID")
-    parser.add_argument(
-        "--machine_type",
-        default="n1-standard-4",
-        help="Vertex AI machine type, e.g. n1-standard-4",
-    )
+    parser.add_argument("--dataset_id", default=bq["dataset_id"], help="BigQuery dataset ID")
+    parser.add_argument("--table_id", default=bq["table_id"], help="BigQuery table ID")
+    parser.add_argument("--machine_type", default=v.get("machine_type", "n1-standard-4"), help="Vertex AI machine type")
     parser.add_argument(
         "--staging_bucket",
         default=None,

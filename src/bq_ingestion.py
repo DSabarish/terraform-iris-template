@@ -1,14 +1,5 @@
 """
-bq_ingestion.py
----------------
-Loads the Iris dataset into an existing BigQuery table (table is created by Terraform).
-Table schema is already defined; this script only inserts rows.
-
-Usage:
-    python bq_ingestion.py \
-        --project_id <GCP_PROJECT_ID> \
-        --dataset_id <BQ_DATASET_ID> \
-        --table_id <BQ_TABLE_ID>
+bq_ingestion.py — Load Iris data into BigQuery. Uses cfg/base.yaml for dataset/table defaults.
 """
 
 import argparse
@@ -18,7 +9,10 @@ from google.cloud import bigquery
 from sklearn.datasets import load_iris
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from cfg import get_config
+
+_config = get_config()
+logging.basicConfig(level=logging.INFO, format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +35,11 @@ def load_iris_to_bq(project_id: str, dataset_id: str, table_id: str) -> None:
 
 
 def parse_args():
+    bq = _config["bigquery"]
     parser = argparse.ArgumentParser(description="Ingest Iris data into BigQuery")
     parser.add_argument("--project_id", required=True)
-    parser.add_argument("--dataset_id", required=True, default="iris_dataset")
-    parser.add_argument("--table_id", required=True, default="iris_raw")
+    parser.add_argument("--dataset_id", default=bq["dataset_id"])
+    parser.add_argument("--table_id", default=bq["table_id"])
     return parser.parse_args()
 
 

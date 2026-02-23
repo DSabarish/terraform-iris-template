@@ -14,10 +14,15 @@ Usage:
 
 import argparse
 import logging
-import os
 import subprocess
 import sys
+from pathlib import Path
 
+# Allow importing cfg when run from project root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from cfg import get_config
+
+_config = get_config()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -44,12 +49,13 @@ def deploy_to_cloud_run(
     logger.info("  Project: %s", project_id)
     logger.info("  GCS Bucket: %s", gcs_bucket)
 
+    scaler_prefix = _config["gcs"]["paths"]["scaler"]
     env_vars = ",".join([
         f"VERTEX_MODEL_DISPLAY_NAME={model_display_name}",
         f"VERTEX_REGION={region}",
         f"GOOGLE_CLOUD_PROJECT={project_id}",
-        f"GCS_BUCKET={gcs_bucket}",           # needed by load_scaler()
-        "SCALER_PREFIX=artifacts/scalers",     # explicit scaler path
+        f"GCS_BUCKET={gcs_bucket}",
+        f"SCALER_PREFIX={scaler_prefix}",
     ])
 
     cmd = [
@@ -87,10 +93,11 @@ def deploy_to_cloud_run(
 
 
 def parse_args() -> argparse.Namespace:
+    cr = _config.get("cloud_run", {})
     parser = argparse.ArgumentParser(description="Deploy to Cloud Run with Vertex AI Model Registry")
     parser.add_argument("--project_id", required=True)
-    parser.add_argument("--region", required=True)
-    parser.add_argument("--service_name", required=True)
+    parser.add_argument("--region", default=cr.get("region", "us-central1"))
+    parser.add_argument("--service_name", default=cr.get("service_name", "iris-ml-api"))
     parser.add_argument("--image_uri", required=True)
     parser.add_argument("--model_display_name", required=True)
     parser.add_argument("--service_account", required=True)

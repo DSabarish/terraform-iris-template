@@ -2,19 +2,7 @@
 transform_data.py
 -----------------
 Reads clean Iris CSV from GCS, applies scaling / feature engineering,
-and saves a transformed CSV back to GCS.
-
-Transformations:
-  - StandardScaler on feature columns
-  - Saves the fitted scaler as scaler.pkl to GCS (used during inference)
-
-Usage:
-    python transform_data.py \
-        --project_id <GCP_PROJECT_ID> \
-        --gcs_bucket <BUCKET_NAME> \
-        --clean_prefix data/clean \
-        --transformed_prefix data/transformed \
-        --scaler_prefix artifacts/scalers
+saves transformed CSV and scaler to GCS. Uses cfg/base.yaml.
 """
 
 import argparse
@@ -26,11 +14,14 @@ from google.cloud import storage
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from cfg import get_config
+
+_config = get_config()
+logging.basicConfig(level=logging.INFO, format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
-FEATURE_COLS = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
-TARGET_COL = "target"
+FEATURE_COLS = _config["model"]["feature_cols"]
+TARGET_COL = _config["model"]["target_col"]
 
 
 def read_csv_from_gcs(storage_client: storage.Client, bucket_name: str, blob_path: str) -> pd.DataFrame:
@@ -68,37 +59,36 @@ def main(
 ) -> None:
     storage_client = storage.Client(project=project_id)
 
-    clean_blob_path = f"{clean_prefix}/iris_clean.csv"
+    gcs_f = _config["gcs"]["filenames"]
+    clean_blob_path = f"{clean_prefix}/{gcs_f['clean_csv']}"
     logger.info("Reading clean data from gs://%s/%s", gcs_bucket, clean_blob_path)
     df_clean = read_csv_from_gcs(storage_client, gcs_bucket, clean_blob_path)
 
     df_transformed, scaler = transform(df_clean)
 
-    # Save transformed CSV
     buf = io.StringIO()
     df_transformed.to_csv(buf, index=False)
     upload_bytes_to_gcs(
         storage_client, gcs_bucket,
-        f"{transformed_prefix}/iris_transformed.csv",
+        f"{transformed_prefix}/{gcs_f['transformed_csv']}",
         buf.getvalue().encode(),
     )
-
-    # Save scaler artifact
     scaler_bytes = pickle.dumps(scaler)
     upload_bytes_to_gcs(
         storage_client, gcs_bucket,
-        f"{scaler_prefix}/scaler.pkl",
+        f"{scaler_prefix}/{gcs_f['scaler_pkl']}",
         scaler_bytes,
     )
 
 
 def parse_args():
+    p = _config["gcs"]["paths"]
     parser = argparse.ArgumentParser(description="Transform Iris data")
     parser.add_argument("--project_id", required=True)
     parser.add_argument("--gcs_bucket", required=True)
-    parser.add_argument("--clean_prefix", default="data/clean")
-    parser.add_argument("--transformed_prefix", default="data/transformed")
-    parser.add_argument("--scaler_prefix", default="artifacts/scalers")
+    parser.add_argument("--clean_prefix", default=p["clean"])
+    parser.add_argument("--transformed_prefix", default=p["transformed"])
+    parser.add_argument("--scaler_prefix", default=p["scaler"])
     return parser.parse_args()
 
 

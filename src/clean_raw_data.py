@@ -2,34 +2,25 @@
 clean_raw_data.py
 -----------------
 Reads raw iris CSV from GCS, cleans it, and saves clean_data.csv back to GCS.
-
-Cleaning steps:
-  - Drop exact duplicates
-  - Drop rows where any feature column is null
-  - Validate target column values are in {0, 1, 2}
-  - Cast column types
-
-Usage:
-    python clean_raw_data.py \
-        --project_id <GCP_PROJECT_ID> \
-        --gcs_bucket <BUCKET_NAME> \
-        --raw_prefix data/raw \
-        --clean_prefix data/clean
+Uses cfg/base.yaml for schema and path defaults.
 """
 
 import argparse
-import logging
 import io
+import logging
 
 from google.cloud import storage
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from cfg import get_config
+
+_config = get_config()
+logging.basicConfig(level=logging.INFO, format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
-FEATURE_COLS = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
-TARGET_COL = "target"
-VALID_TARGETS = {0, 1, 2}
+FEATURE_COLS = _config["model"]["feature_cols"]
+TARGET_COL = _config["model"]["target_col"]
+VALID_TARGETS = set(_config["model"]["valid_targets"])
 
 
 def read_csv_from_gcs(storage_client: storage.Client, bucket_name: str, blob_path: str) -> pd.DataFrame:
@@ -81,24 +72,27 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def main(project_id: str, gcs_bucket: str, raw_prefix: str, clean_prefix: str) -> None:
     storage_client = storage.Client(project=project_id)
+    raw_csv = _config["gcs"]["filenames"]["raw_csv"]
+    clean_csv = _config["gcs"]["filenames"]["clean_csv"]
 
-    raw_blob_path = f"{raw_prefix}/iris_raw.csv"
+    raw_blob_path = f"{raw_prefix}/{raw_csv}"
     logger.info("Reading raw data from gs://%s/%s", gcs_bucket, raw_blob_path)
     df_raw = read_csv_from_gcs(storage_client, gcs_bucket, raw_blob_path)
     logger.info("Raw data shape: %s", df_raw.shape)
 
     df_clean = clean_data(df_raw)
 
-    clean_blob_path = f"{clean_prefix}/iris_clean.csv"
+    clean_blob_path = f"{clean_prefix}/{clean_csv}"
     write_csv_to_gcs(storage_client, gcs_bucket, clean_blob_path, df_clean)
 
 
 def parse_args():
+    p = _config["gcs"]["paths"]
     parser = argparse.ArgumentParser(description="Clean raw Iris data")
     parser.add_argument("--project_id", required=True)
     parser.add_argument("--gcs_bucket", required=True)
-    parser.add_argument("--raw_prefix", default="data/raw")
-    parser.add_argument("--clean_prefix", default="data/clean")
+    parser.add_argument("--raw_prefix", default=p["raw"])
+    parser.add_argument("--clean_prefix", default=p["clean"])
     return parser.parse_args()
 
 

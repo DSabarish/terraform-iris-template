@@ -1,0 +1,109 @@
+# -----------------------------------------------------------------------------
+# Iris ML Project — Main configuration (base.yaml)
+# -----------------------------------------------------------------------------
+# All settings in one place. Environment variables override these at runtime.
+# Load in code via: from cfg import get_config; c = get_config()
+# -----------------------------------------------------------------------------
+
+# Application (FastAPI / serving)
+app:
+  title: "Iris ML API"
+  description: "Production-ready Iris flower classification API"
+  version: "1.0.0"
+  port: 8080
+  environment: "unknown"  # set via ENVIRONMENT (e.g. dev, qa, prod)
+  cors:
+    allow_origins: ["*"]
+    allow_credentials: false
+    allow_methods: ["*"]
+    allow_headers: ["*"]
+
+# GCP — project and region (often overridden by env / CI)
+gcp:
+  project_id: ""          # set via GCP_PROJECT / GOOGLE_CLOUD_PROJECT
+  region: "us-central1"    # set via VERTEX_REGION / REGION
+
+# BigQuery — dataset and table names
+bigquery:
+  dataset_id: "iris_dataset"
+  table_id: "iris_raw"
+
+# GCS — bucket and path prefixes (bucket often from GCS_BUCKET)
+gcs:
+  bucket: ""              # set via GCS_BUCKET
+  paths:
+    raw: "data/raw"
+    clean: "data/clean"
+    transformed: "data/transformed"
+    scaler: "artifacts/scalers"
+    model: "artifacts/models"
+    model_latest: "artifacts/models/latest"
+  filenames:
+    raw_csv: "iris_raw.csv"
+    clean_csv: "iris_clean.csv"
+    transformed_csv: "iris_transformed.csv"
+    model_pkl: "model.pkl"
+    scaler_pkl: "scaler.pkl"
+    metrics_json: "metrics.json"
+
+# Model — schema and training defaults
+model:
+  target_names:
+    - "setosa"
+    - "versicolor"
+    - "virginica"
+  target_names_map:       # id -> name for inference
+    0: "setosa"
+    1: "versicolor"
+    2: "virginica"
+  feature_cols:           # input features (before engineering)
+    - "sepal_length"
+    - "sepal_width"
+    - "petal_length"
+    - "petal_width"
+  feature_cols_full:      # after transform (includes engineered)
+    - "sepal_length"
+    - "sepal_width"
+    - "petal_length"
+    - "petal_width"
+    - "petal_area"
+    - "sepal_area"
+  target_col: "target"
+  valid_targets: [0, 1, 2]
+  train:
+    test_size: 0.2
+    random_state: 42
+    n_estimators: 100
+
+# Vertex AI — Model Registry & deployment
+vertex:
+  region: "us-central1"
+  model_registry:
+    display_name_prefix: "iris-classifier"
+  endpoint:
+    name: "iris-ml-endpoint"
+    machine_type: "n1-standard-2"
+    min_replicas: 1
+    max_replicas: 3
+  custom_job:
+    machine_type: "n1-standard-4"
+
+# Cloud Run — serving
+cloud_run:
+  service_name: "iris-ml-api"
+  region: "us-central1"
+  port: 8080
+
+# Artifact Registry — Docker image
+artifact_registry:
+  repo_name: "iris-ml"
+  image_name: "iris-ml-api"
+
+# Pipeline — commit SHA for versioning (set by CI: GIT_COMMIT_SHA)
+pipeline:
+  version_key: "local"    # GIT_COMMIT_SHA or "local"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s %(levelname)s %(message)s"

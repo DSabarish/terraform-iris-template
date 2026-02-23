@@ -1,19 +1,16 @@
 """
-pipeline.py
------------
-Single entrypoint to run the full Iris pipeline on GCP:
-
+pipeline.py — Single entrypoint for full Iris pipeline on GCP. Uses cfg/base.yaml.
 BigQuery → GCS (raw) → GCS (clean) → GCS (transformed + scaler) → GCS (model).
-
-This is what GitHub Actions should call instead of running each step manually.
 """
 
 import argparse
 import logging
 
+from cfg import get_config
 from src import bq_ingestion, load_data_from_bq, clean_raw_data, transform_data, train
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_config = get_config()
+logging.basicConfig(level=logging.INFO, format=_config["logging"]["format"])
 logger = logging.getLogger(__name__)
 
 
@@ -46,48 +43,43 @@ def run_pipeline(
     # 1) Load Iris into BigQuery
     bq_ingestion.load_iris_to_bq(project_id=project_id, dataset_id=dataset_id, table_id=table_id)
 
-    # 2) Export BQ → GCS (raw CSV)
+    p = _config["gcs"]["paths"]
     load_data_from_bq.export_bq_to_gcs(
         project_id=project_id,
         dataset_id=dataset_id,
         table_id=table_id,
         gcs_bucket=gcs_bucket,
-        gcs_prefix="data/raw",
+        gcs_prefix=p["raw"],
     )
-
-    # 3) Clean raw data
     clean_raw_data.main(
         project_id=project_id,
         gcs_bucket=gcs_bucket,
-        raw_prefix="data/raw",
-        clean_prefix="data/clean",
+        raw_prefix=p["raw"],
+        clean_prefix=p["clean"],
     )
-
-    # 4) Transform data + save scaler
     transform_data.main(
         project_id=project_id,
         gcs_bucket=gcs_bucket,
-        clean_prefix="data/clean",
-        transformed_prefix="data/transformed",
-        scaler_prefix="artifacts/scalers",
+        clean_prefix=p["clean"],
+        transformed_prefix=p["transformed"],
+        scaler_prefix=p["scaler"],
     )
-
-    # 5) Train model + save artifacts
     train.main(
         project_id=project_id,
         gcs_bucket=gcs_bucket,
-        transformed_prefix="data/transformed",
-        model_prefix="artifacts/models",
+        transformed_prefix=p["transformed"],
+        model_prefix=p["model"],
     )
 
     logger.info("Pipeline completed successfully.")
 
 
 def parse_args() -> argparse.Namespace:
+    bq = _config["bigquery"]
     parser = argparse.ArgumentParser(description="Run the full Iris ML pipeline on GCP")
     parser.add_argument("--project_id", required=True, help="GCP project ID")
-    parser.add_argument("--dataset_id", default="iris_dataset", help="BigQuery dataset ID")
-    parser.add_argument("--table_id", default="iris_raw", help="BigQuery table ID")
+    parser.add_argument("--dataset_id", default=bq["dataset_id"], help="BigQuery dataset ID")
+    parser.add_argument("--table_id", default=bq["table_id"], help="BigQuery table ID")
     parser.add_argument("--gcs_bucket", required=True, help="GCS bucket for data & models")
     return parser.parse_args()
 

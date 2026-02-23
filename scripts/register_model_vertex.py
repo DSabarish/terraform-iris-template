@@ -16,9 +16,14 @@ import argparse
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from cfg import get_config
 from google.cloud import aiplatform
+
+_config = get_config()
 
 # CRITICAL: stream=sys.stderr ensures ALL log output goes to stderr only.
 # stdout must be clean so that shell $(...) captures only the printed resource name.
